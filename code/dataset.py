@@ -72,7 +72,7 @@ def combine_datasets(sets,H,W):
     return Dataset(train_X,train_Y,test_X,test_Y)
 
 
-def visualize(image):
+def visualize(image, width=32):
     # BHWC
 
     cols = int(np.ceil(np.sqrt(image.shape[0])))
@@ -85,7 +85,7 @@ def visualize(image):
             ax.axes.axes.get_xaxis().set_visible(False)
             ax.axes.axes.get_yaxis().set_visible(False)
 
-            imgplot = ax.imshow(image[img_number].reshape(32, 32, 3))
+            imgplot = ax.imshow(image[img_number].reshape(width, width, 3))
             imgplot.set_interpolation('nearest')
             ax.xaxis.set_ticks_position('top')
             ax.yaxis.set_ticks_position('left')

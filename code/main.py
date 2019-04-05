@@ -3,25 +3,40 @@ import functools as func
 
 from mnist import mnist
 from cifar import cifar
+from omniglot import omniglot
 from dataset import combine_datasets, visualize
 import time
 import numpy as np
 np.random.seed(12345)
 import tensorflow as tf
 tf.random.set_random_seed(12345)
-
+import matplotlib.pyplot as plt
 
 
 # DEFINE DATA
-image_height = image_width = 32
+image_height = image_width = 28
+#original_datasets = [cifar(100)]
+#original_datasets = [omniglot]
 original_datasets = [mnist, cifar(10)] # cifar10, 20 or 100 is allowed
-#original_datasets = [cifar(10)]
+#original_datasets = [mnist]
 dataset = combine_datasets(original_datasets, image_width, image_height)
 
-#visualize(dataset.train_X[:25])
-visualize(dataset.train_X[54990:55015])
-visualize(dataset.train_X[np.argmax(dataset.train_Y,axis=1)==3][:25])
-visualize(dataset.test_X[np.argmax(dataset.test_Y,axis=1)==7][:25])
+
+#visualize(dataset.train_X[:100], width=image_width)
+
+def visualize_class(c):
+    visualize(dataset.train_X[np.argmax(dataset.train_Y, axis=1) == c], width=image_width)
+    visualize(dataset.test_X[np.argmax(dataset.test_Y, axis=1) == c], width=image_width)
+
+#for i in range(10):
+#    visualize_class(i)
+#    input()
+
+#visualize(dataset.train_X[54990:55015])
+#visualize(dataset.train_X[np.argmax(dataset.train_Y,axis=1)==3][:25])
+#visualize(dataset.test_X[np.argmax(dataset.test_Y,axis=1)==7][:25])
+print(np.argmax(dataset.train_Y[:100],axis=1))
+
 
 print("using dataset:")
 dataset.print_shapes()
@@ -38,13 +53,55 @@ with tf.device(GPU):
     Y_Onehot = tf.placeholder(tf.float32, [None, num_classes], 'Y_Onehot')
     Training = tf.placeholder_with_default(False, ())
 
-    net_name = "mix net sum attention-gate"
+
+    net_name = "stack4normal"
+    #net_name = "normal net"
+
+
 
     # normal net will configured to be the baseline
     # some version of mix net with softmax will become another baseline
     # nets below are just to have some minor test
+    if net_name == '1-hidden':
+        layer = tf.layers.flatten(X)
+        layer = tf.layers.dense(layer, 40000, tf.nn.relu)
+        layer = tf.layers.dense(layer, num_classes)
+        Y_Logits = layer
+    elif net_name == '2-hidden':
+            layer = tf.layers.flatten(X)
+            layer = tf.layers.dense(layer, 1024, tf.sigmoid)
+            layer = tf.layers.dense(layer, 1024, tf.sigmoid)
 
-    if net_name == "normal net":
+            layer = tf.layers.dense(layer, num_classes)
+            Y_Logits = layer
+
+    elif net_name == 'vgg16':
+        layer = X
+        #layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
+        #layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
+        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (112,112)
+        #layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
+        #layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
+        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (56,56)
+        #layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
+        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (28,28)
+        #layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (14,14)
+        #layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
+        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (7,7)
+        layer = tf.layers.flatten(layer)
+        layer = tf.layers.dense(layer,512,tf.nn.relu) # 4096 -> reduce memory
+        layer = tf.layers.dense(layer,512,tf.nn.relu) # 4096 -> reduce memory
+        layer = tf.layers.dense(layer,num_classes)
+        Y_Logits = layer
+
+    elif net_name == "normal net":
         layer = X
         layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
         layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
@@ -335,6 +392,32 @@ with tf.device(GPU):
         layer = tf.layers.dropout(layer, training=Training)
         layer = tf.layers.dense(layer, num_classes)
         Y_Logits = layer
+    elif net_name == "stack4normal":
+        splits = 4
+        gate = tf.layers.flatten(X)
+        gate = tf.layers.dense(gate,64,tf.nn.relu)
+        gate = tf.layers.dense(gate,splits,tf.nn.softmax)
+        outputs = []
+        for m in range(splits):
+            layer = X
+            layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
+            layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
+            layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
+            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
+            layer = tf.layers.flatten(layer)
+            layer = tf.layers.dense(layer, 256, tf.nn.relu)
+            layer = tf.layers.dropout(layer, training=Training)
+            layer = tf.layers.dense(layer, num_classes)
+            layer *= gate[:, m, tf.newaxis]
+            outputs.append(layer)
+        Y_Logits = sum(outputs)
+
+
     # used to debug
     elif net_name == "random":
         Y_Logits = tf.random.normal(tf.shape(Y_Onehot)) + tf.Variable(0.) # +var for backprop to run properly
@@ -352,7 +435,7 @@ with tf.device(GPU):
 
 
 # DEFINE TRAINING
-epochs = 20
+epochs = 1000
 batchsize = 128
 
 Trainstep = tf.train.AdamOptimizer().minimize(Loss)
@@ -365,12 +448,15 @@ with tf.Session() as sess:
     print(summary)
 
     train_acc_history = []
+    test_acc_history = []
+    test_times = []
+
     start = time.time()
     for e in range(epochs):
         print("epoch",e)
         sess.run(tf.local_variables_initializer()) # reset acc
         indices = np.arange(train_size)
-        np.random.shuffle(indices)
+        #np.random.shuffle(indices)
         for b in range(0,train_size,batchsize):
             if b%12800 == 0:
                 print("batch",b)
@@ -383,11 +469,41 @@ with tf.Session() as sess:
         train_acc_history.append(sess.run(Acc))
         print('epoch',e,'train acc',train_acc_history[-1])
 
+        test_start = time.time()
+        sess.run(tf.local_variables_initializer())  # reset acc
+        indices = np.arange(test_size)
+        for b in range(0, test_size, batchsize):
+            batch_i = indices[b:b + batchsize]
+            batch_x = dataset.test_X[batch_i]
+            batch_y = dataset.test_Y[batch_i]
+            feeddict = {X: batch_x, Y_Onehot: batch_y}
+            sess.run(Acc_op, feeddict)
+        test_end = time.time()
+        test_acc = sess.run(Acc)
+        test_time = test_end - test_start
+        test_acc_history.append(test_acc)
+        test_times.append(test_time)
+        print('epoch',e,'test acc',test_acc_history[-1])
+
+        earlystop = e - np.argmax(train_acc_history) > 3
+        if earlystop:
+            epochs = e
+            break
+
     end = time.time()
-    train_time = end-start
+    train_time = end-start-sum(test_times)
+
+    # plot
+    plt.plot(range(len(train_acc_history)),train_acc_history,'b')
+    plt.plot(range(len(test_acc_history)),test_acc_history,'r')
+    #plt.axis([0,epochs,0,1])
+    plt.xlabel('epoch')
+    plt.ylabel('accuracy')
+    plt.show()
+
 
     # DEFINE TESTING
-
+    """
     start = time.time()
     sess.run(tf.local_variables_initializer()) # reset acc
     indices = np.arange(test_size)
@@ -400,14 +516,15 @@ with tf.Session() as sess:
     end = time.time()
     test_time = end-start
     test_acc = sess.run(Acc)
+    """
 
 lines = [
     '\n',net_name,
     '\nepochs ',str(epochs),
     '\ntrain time ',str(train_time),
+    '\ntest time ',str(test_times),
     '\ntrain acc by epoch ',str(train_acc_history),
-    '\ntest time ',str(test_time),
-    '\ntest acc ',str(test_acc),
+    '\ntest acc ',str(test_acc_history),
     '\n'
 ]
 
