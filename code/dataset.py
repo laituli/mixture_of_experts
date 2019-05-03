@@ -29,12 +29,15 @@ def check_shape(X):
         raise Exception('cannot understand image shape')
     return H,W,C
 
-def resized_images(X,new_H,new_W):
+def resized_images(X,new_H,new_W, is_gray):
     H,W,C = check_shape(X)
     X = np.reshape(X, (-1,H,W,C))
-    if C == 1:
+    if is_gray and C == 3:
+        X = np.mean(X,axis=-1,keepdims=True)
+    elif not is_gray and C == 1:
         X = np.tile(X, (1, 1, 1, 3))
     X = np.array([cv2.resize(x, dsize=(new_H, new_W), interpolation=cv2.INTER_CUBIC) for x in X])
+    if is_gray: X = X[:,:,:,np.newaxis]
     return X
 
 class Dataset:
@@ -51,9 +54,9 @@ class Dataset:
         print('test X',self.test_X.shape)
         print('test Y',self.test_Y.shape)
 
-def combine_datasets(sets,H,W):
-    train_X = np.concatenate([resized_images(set.train_X,H,W) for set in sets])
-    test_X = np.concatenate([resized_images(set.test_X,H,W) for set in sets])
+def combine_datasets(sets,H,W, is_gray):
+    train_X = np.concatenate([resized_images(set.train_X,H,W,is_gray) for set in sets])
+    test_X = np.concatenate([resized_images(set.test_X,H,W,is_gray) for set in sets])
 
     train_Y = np.zeros((0,0))
     test_Y = np.zeros((0,0))
@@ -72,10 +75,12 @@ def combine_datasets(sets,H,W):
     return Dataset(train_X,train_Y,test_X,test_Y)
 
 
-def visualize(image, width=32):
+def visualize(image):
     # BHWC
 
     cols = int(np.ceil(np.sqrt(image.shape[0])))
+    if image.shape[-1] == 1:
+        image = np.tile(image,(1,1,1,3))
 
     img_number = 0
     for row in range(0, cols):
@@ -85,7 +90,7 @@ def visualize(image, width=32):
             ax.axes.axes.get_xaxis().set_visible(False)
             ax.axes.axes.get_yaxis().set_visible(False)
 
-            imgplot = ax.imshow(image[img_number].reshape(width, width, 3))
+            imgplot = ax.imshow(image[img_number])
             imgplot.set_interpolation('nearest')
             ax.xaxis.set_ticks_position('top')
             ax.yaxis.set_ticks_position('left')
