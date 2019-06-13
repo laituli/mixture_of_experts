@@ -36,8 +36,15 @@ def resized_images(X,new_H,new_W, is_gray):
         X = np.mean(X,axis=-1,keepdims=True)
     elif not is_gray and C == 1:
         X = np.tile(X, (1, 1, 1, 3))
-    X = np.array([cv2.resize(x, dsize=(new_H, new_W), interpolation=cv2.INTER_CUBIC) for x in X])
-    if is_gray: X = X[:,:,:,np.newaxis]
+
+
+    _X = []
+    for x in X:
+        _X.append(cv2.resize(x, dsize=(new_H, new_W), interpolation=cv2.INTER_CUBIC))
+
+    X = np.array(_X)
+    if is_gray:
+        X = X[:,:,:,np.newaxis]
     return X
 
 class Dataset:
@@ -55,8 +62,17 @@ class Dataset:
         print('test Y',self.test_Y.shape)
 
 def combine_datasets(sets,H,W, is_gray):
-    train_X = np.concatenate([resized_images(set.train_X,H,W,is_gray) for set in sets])
-    test_X = np.concatenate([resized_images(set.test_X,H,W,is_gray) for set in sets])
+    train_X = []
+    test_X = []
+    for i, set in enumerate(sets):
+        train_x = resized_images(set.train_X, H, W, is_gray)
+        train_X.append(train_x)
+        test_x = resized_images(set.test_X, H, W, is_gray)
+        test_X.append(test_x)
+
+
+    train_X = np.concatenate(train_X)
+    test_X = np.concatenate(test_X)
 
     train_Y = np.zeros((0,0))
     test_Y = np.zeros((0,0))
