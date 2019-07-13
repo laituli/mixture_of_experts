@@ -1,536 +1,397 @@
-#import itertools as iter
-import functools as func
-
-from mnist import mnist
-from cifar import cifar
-from omniglot import omniglot
-from dataset import combine_datasets, visualize
-import time
 import numpy as np
-np.random.seed(12345)
+np.random.seed(123)
 import tensorflow as tf
-tf.random.set_random_seed(12345)
-import matplotlib.pyplot as plt
-
-
-# DEFINE DATA
-image_height = image_width = 28
-#original_datasets = [cifar(100)]
-#original_datasets = [omniglot]
-original_datasets = [mnist, cifar(10)] # cifar10, 20 or 100 is allowed
-#original_datasets = [mnist]
-dataset = combine_datasets(original_datasets, image_width, image_height)
-
-
-#visualize(dataset.train_X[:100], width=image_width)
-
-def visualize_class(c):
-    visualize(dataset.train_X[np.argmax(dataset.train_Y, axis=1) == c], width=image_width)
-    visualize(dataset.test_X[np.argmax(dataset.test_Y, axis=1) == c], width=image_width)
-
-#for i in range(10):
-#    visualize_class(i)
-#    input()
-
-#visualize(dataset.train_X[54990:55015])
-#visualize(dataset.train_X[np.argmax(dataset.train_Y,axis=1)==3][:25])
-#visualize(dataset.test_X[np.argmax(dataset.test_Y,axis=1)==7][:25])
-print(np.argmax(dataset.train_Y[:100],axis=1))
-
-
-print("using dataset:")
-dataset.print_shapes()
-
-train_size = dataset.train_X.shape[0]
-test_size = dataset.test_X.shape[0]
-num_classes = dataset.train_Y.shape[1]
-print("number of classes:",num_classes)
-
-# DEFINE TOPOLOGY
-GPU = '/job:localhost/replica:0/task:0/device:GPU:0'
-with tf.device(GPU):
-    X = tf.placeholder(tf.float32, [None, image_height, image_width, 3], 'X')
-    Y_Onehot = tf.placeholder(tf.float32, [None, num_classes], 'Y_Onehot')
-    Training = tf.placeholder_with_default(False, ())
-
-
-    net_name = "stack4normal"
-    #net_name = "normal net"
-
-
-
-    # normal net will configured to be the baseline
-    # some version of mix net with softmax will become another baseline
-    # nets below are just to have some minor test
-    if net_name == '1-hidden':
-        layer = tf.layers.flatten(X)
-        layer = tf.layers.dense(layer, 40000, tf.nn.relu)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == '2-hidden':
-            layer = tf.layers.flatten(X)
-            layer = tf.layers.dense(layer, 1024, tf.sigmoid)
-            layer = tf.layers.dense(layer, 1024, tf.sigmoid)
-
-            layer = tf.layers.dense(layer, num_classes)
-            Y_Logits = layer
-
-    elif net_name == 'vgg16':
-        layer = X
-        #layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        #layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (112,112)
-        #layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-        #layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (56,56)
-        #layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-        #layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (28,28)
-        #layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (14,14)
-        #layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 512, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same') # (7,7)
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer,512,tf.nn.relu) # 4096 -> reduce memory
-        layer = tf.layers.dense(layer,512,tf.nn.relu) # 4096 -> reduce memory
-        layer = tf.layers.dense(layer,num_classes)
-        Y_Logits = layer
-
-    elif net_name == "normal net":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer,(2,2),(2,2),padding='same')
-        layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer,(2,2),(2,2),padding='same')
-        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer,(2,2),(2,2),padding='same')
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer,256,tf.nn.relu)
-        layer = tf.layers.dropout(layer,training=Training)
-        layer = tf.layers.dense(layer,num_classes)
-        Y_Logits = layer
-    # tested running time with submodules without gating with reduce-sum / sum / concat
-    # sum is a bit faster
-    elif net_name == "test1: no-gate net reduce-sum":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = tf.reduce_sum(layers, axis=0)
-        # layer = sum(layers)
-        # layer = tf.concat(layer, axis=-1)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = tf.reduce_sum(layers, axis=0)
-        # layer = sum(layers)
-        # layer = tf.concat(layer,axis=-1)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "test1: no-gate net sum":  # test running time
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "test1: no-gate net concat":  # test running time
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = tf.concat(layers, axis=-1)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layers.append(sub_layer)
-        layer = tf.concat(layers, axis=-1)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    # tested  concat-and-einsum/multiply-and-sum running time
-    # concat-and-einsum is much slower
-    elif net_name == "test2: mix net einsum":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = sub_layer[tf.newaxis]
-            layers.append(sub_layer)
-        layer = tf.concat(layers, axis=0)
-        layer = tf.einsum('bm,mbhwc->bhwc', gate, layer)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = sub_layer[tf.newaxis]
-            layers.append(sub_layer)
-        layer = tf.concat(layers, axis=0)
-        layer = tf.einsum('bm,mbhwc->bhwc', gate, layer)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "test2: mix net sum":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer *= gate[:, m, tf.newaxis, tf.newaxis, tf.newaxis]
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer *= gate[:, m, tf.newaxis, tf.newaxis, tf.newaxis]
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "mix net sum attention-gate":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        gate = tf.einsum('bhwc,c->bhw', layer, tf.Variable(tf.zeros(64)))
-        # gate = tf.layers.dense(layer, 1, use_bias=False)  # BHWC -> BHW1
-        # gate = tf.nn.softmax(gate,axis=[1,2])
-        gate -= tf.reduce_max(gate, axis=[1, 2], keepdims=True)
-        gate = tf.exp(gate)
-        gate /= tf.reduce_sum(gate, axis=[1, 2], keepdims=True)
-        # softmax(A_i) == exp(A_i) / sum_j (exp(A_j)) == exp(A_i-max(A)) / sum_j (exp(A_j-max(A)))
-        gate = gate[:,:,:,tf.newaxis]
-        gate *= layer
-        gate = tf.reduce_sum(layer, [1, 2])  # BHWC -> BC
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer *= gate[:,m,tf.newaxis,tf.newaxis,tf.newaxis]
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 4
-        gate = tf.einsum('bhwc,c->bhw', layer, tf.Variable(tf.zeros(64)))
-        # gate = tf.layers.dense(layer, 1, use_bias=False)  # BHWC -> BHW1
-        # gate = tf.nn.softmax(gate,axis=[1,2])
-        gate -= tf.reduce_max(gate, axis=[1, 2], keepdims=True)
-        gate = tf.exp(gate)
-        gate /= tf.reduce_sum(gate, axis=[1, 2], keepdims=True)
-        # softmax(A_i) == exp(A_i) / sum_j (exp(A_j)) == exp(A_i-max(A)) / sum_j (exp(A_j-max(A)))
-        gate = gate[:, :, :, tf.newaxis]
-        gate *= layer
-        gate = tf.reduce_sum(layer, [1, 2])  # BHWC -> BC
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer *= gate[:, m, tf.newaxis, tf.newaxis, tf.newaxis]
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "hierarchical":
-        layer = X
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        splits = 2
-        gate = tf.reduce_mean(layer, [1, 2])
-        gate = tf.layers.dense(gate, splits, tf.nn.softmax)
-        layers = []
-        for m in range(splits):
-            sub_layer = layer
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            sub_layer = tf.layers.conv2d(sub_layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-
-            sub_layer = tf.layers.max_pooling2d(sub_layer, (2, 2), (2, 2), padding='same')
-            sub_splits = 2
-            sub_gate = tf.reduce_mean(sub_layer, [1,2])
-            sub_gate = tf.layers.dense(sub_gate, sub_splits, tf.nn.softmax)
-            subsub_layers = []
-            for sub_m in range(sub_splits):
-                subsub_layer = sub_layer
-                subsub_layer = tf.layers.conv2d(subsub_layer, 64, (3,3), padding='same', activation=tf.nn.relu)
-                subsub_layer = tf.layers.conv2d(subsub_layer, 64, (3,3), padding='same', activation=tf.nn.relu)
-                subsub_layer *= sub_gate[:,sub_m,tf.newaxis,tf.newaxis,tf.newaxis]
-                subsub_layers.append(subsub_layer)
-            sub_layer = sum(subsub_layers)
-            sub_layer *= gate[:, m, tf.newaxis, tf.newaxis, tf.newaxis]
-            layers.append(sub_layer)
-        layer = sum(layers)
-        layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-
-        layer = tf.layers.flatten(layer)
-        layer = tf.layers.dense(layer, 256, tf.nn.relu)
-        layer = tf.layers.dropout(layer, training=Training)
-        layer = tf.layers.dense(layer, num_classes)
-        Y_Logits = layer
-    elif net_name == "stack4normal":
-        splits = 4
-        gate = tf.layers.flatten(X)
-        gate = tf.layers.dense(gate,64,tf.nn.relu)
-        gate = tf.layers.dense(gate,splits,tf.nn.softmax)
-        outputs = []
-        for m in range(splits):
-            layer = X
-            layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.conv2d(layer, 64, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-            layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.conv2d(layer, 128, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-            layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.conv2d(layer, 256, (3, 3), padding='same', activation=tf.nn.relu)
-            layer = tf.layers.max_pooling2d(layer, (2, 2), (2, 2), padding='same')
-            layer = tf.layers.flatten(layer)
-            layer = tf.layers.dense(layer, 256, tf.nn.relu)
-            layer = tf.layers.dropout(layer, training=Training)
-            layer = tf.layers.dense(layer, num_classes)
-            layer *= gate[:, m, tf.newaxis]
-            outputs.append(layer)
-        Y_Logits = sum(outputs)
-
-
-    # used to debug
-    elif net_name == "random":
-        Y_Logits = tf.random.normal(tf.shape(Y_Onehot)) + tf.Variable(0.) # +var for backprop to run properly
-    else:
-        raise Exception('unimplemented net:'+net_name)
-
-    # DEFINE MEASURES
-    Loss = tf.losses.softmax_cross_entropy(Y_Onehot,Y_Logits)
-
-    Y_True = tf.argmax(Y_Onehot,axis=1)
-    Y_Pred = tf.argmax(Y_Logits,axis=1)
-    Acc, Acc_op = tf.metrics.accuracy(Y_True,Y_Pred)
-    print(Acc,Acc_op)
-    # and TIME: converging time, prediction time
-
-
-# DEFINE TRAINING
-epochs = 1000
-batchsize = 128
-
-Trainstep = tf.train.AdamOptimizer().minimize(Loss)
-
-with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-
-
-    summary = tf.Summary()
-    print(summary)
-
-    train_acc_history = []
-    test_acc_history = []
-    test_times = []
-
-    start = time.time()
-    for e in range(epochs):
-        print("epoch",e)
-        sess.run(tf.local_variables_initializer()) # reset acc
-        indices = np.arange(train_size)
-        #np.random.shuffle(indices)
-        for b in range(0,train_size,batchsize):
-            if b%12800 == 0:
-                print("batch",b)
-            batch_i = indices[b:b+batchsize]
-            batch_x = dataset.train_X[batch_i]
-            batch_y = dataset.train_Y[batch_i]
-            feeddict = {X: batch_x, Y_Onehot: batch_y, Training:True}
-            sess.run((Trainstep,Acc_op),feeddict)
-        print()
-        train_acc_history.append(sess.run(Acc))
-        print('epoch',e,'train acc',train_acc_history[-1])
-
-        test_start = time.time()
-        sess.run(tf.local_variables_initializer())  # reset acc
-        indices = np.arange(test_size)
-        for b in range(0, test_size, batchsize):
-            batch_i = indices[b:b + batchsize]
-            batch_x = dataset.test_X[batch_i]
-            batch_y = dataset.test_Y[batch_i]
-            feeddict = {X: batch_x, Y_Onehot: batch_y}
-            sess.run(Acc_op, feeddict)
-        test_end = time.time()
-        test_acc = sess.run(Acc)
-        test_time = test_end - test_start
-        test_acc_history.append(test_acc)
-        test_times.append(test_time)
-        print('epoch',e,'test acc',test_acc_history[-1])
-
-        earlystop = e - np.argmax(train_acc_history) > 3
-        if earlystop:
-            epochs = e
-            break
-
-    end = time.time()
-    train_time = end-start-sum(test_times)
-
-    # plot
-    plt.plot(range(len(train_acc_history)),train_acc_history,'b')
-    plt.plot(range(len(test_acc_history)),test_acc_history,'r')
-    #plt.axis([0,epochs,0,1])
-    plt.xlabel('epoch')
-    plt.ylabel('accuracy')
-    plt.show()
-
-
-    # DEFINE TESTING
-    """
-    start = time.time()
-    sess.run(tf.local_variables_initializer()) # reset acc
-    indices = np.arange(test_size)
-    for b in range(0, test_size, batchsize):
-        batch_i = indices[b:b + batchsize]
-        batch_x = dataset.test_X[batch_i]
-        batch_y = dataset.test_Y[batch_i]
-        feeddict = {X: batch_x, Y_Onehot: batch_y}
-        sess.run(Acc_op, feeddict)
-    end = time.time()
-    test_time = end-start
-    test_acc = sess.run(Acc)
-    """
-
-lines = [
-    '\n',net_name,
-    '\nepochs ',str(epochs),
-    '\ntrain time ',str(train_time),
-    '\ntest time ',str(test_times),
-    '\ntrain acc by epoch ',str(train_acc_history),
-    '\ntest acc ',str(test_acc_history),
-    '\n'
-]
-
-with open("results.txt",'a+') as file:
-    file.writelines(lines)
-
-
-
-
+tf.set_random_seed(123)
+
+import os
+from datetime import datetime
+
+from utils import plot, compute, save, train
+from utils.train import *
+from utils.moe import *
+
+
+def force_mkdir(folder):
+    if not os.path.isdir(folder):
+        os.mkdir(folder)
+
+def mixture_data():
+    print("load data")
+    from datacode.mnist import mnist
+    from datacode.cifar import cifar
+    from datacode.dataset import combine_datasets
+
+    dataset = combine_datasets([mnist, cifar(10)], 32, 32, True)
+    return dataset
+
+def cifar100():
+    print("load data")
+    from datacode.cifar import cifar
+    return cifar(100)
+
+def cifar100and20():
+    print("load data")
+    from datacode.cifar import cifar
+    cifar100 = cifar(100)
+    cifar20 = cifar(20)
+    cifar100.train_Z, cifar100.test_Z = cifar20.train_Y, cifar20.test_Y
+    return cifar100
+
+class Experiment1:
+    index = 1
+    name = "Mixture ELinear differentG"
+
+    @staticmethod
+    def run(folder):
+        dataset = mixture_data()
+        expertf = Expert.linear
+        gates = {"no-gate": Gate.no_gate,
+                 "predesigned": Gate.predesigned,
+                 "linear": Gate.linear,
+                 "1-hidden": Gate.one_hidden_layer}
+        epochs = 20
+        num_experts = 2
+        result = experiment_gatef_loop(gates, dataset, epochs, num_experts, expertf, folder)
+
+        for gname, activation in result["class activation"].items():
+            for i in [0, 1]:
+                plot.plot_activation_of_expert(activation, i, folder + gname + " expert %i activation.png" % i)
+
+class Experiment2:
+    index = 2
+    name = "Mixture EConv differentG"
+
+    @staticmethod
+    def run(folder):
+        dataset = mixture_data()
+        expertf = Expert.convolutional
+        gates = {"no-gate": Gate.no_gate,
+                 "predesigned": Gate.predesigned,
+                 "linear": Gate.linear,
+                 "1-hidden": Gate.one_hidden_layer}
+        epochs = 20
+        num_experts = 2
+        result = experiment_gatef_loop(gates, dataset, epochs, num_experts, expertf, folder)
+
+        for gname, activation in result["class activation"].items():
+            for i in [0, 1]:
+                plot.plot_activation_of_expert(activation, i, folder + gname + " expert %i activation.png" % i)
+
+class Experiment3:
+    index = 3
+    name = "Mixture ELinear different#E"
+
+    @staticmethod
+    def run(folder):
+        dataset = mixture_data()
+
+        expertf = Expert.linear
+        gatef = Gate.one_hidden_layer
+        all_num_experts = [20, 16, 12, 10, 8, 6, 4, 3, 2, 1]
+        epochs = 20
+        z_size = 2
+
+        results = experiment_numE_loop(all_num_experts, dataset, epochs, gatef, expertf, folder)
+        result2 = experiment_gatef_loop({"predesigned": Gate.predesigned}, dataset, epochs, z_size, expertf, folder)
+        plot.special_num_E_accuracy(results["acc"],result2["acc"]["predesigned"], z_size,
+                                    folder + "numE_accuracy_with_additional_predesigned_gate.png")
+
+        for number_of_experts, activation in results["class activation"].items():
+            for i in range(number_of_experts):
+                print("plot activation",i,"/",number_of_experts)
+                plot.plot_activation_of_expert(activation, i,
+                                               folder + " expert %i-%i activation.png" % (i,number_of_experts))
+
+class Experiment4:
+    index = 4
+    name = "Cifar100 ELinear different#E"
+
+    @staticmethod
+    def run(folder):
+        dataset = cifar100and20()
+
+        expertf = Expert.linear
+        gatef = Gate.one_hidden_layer
+        all_num_experts = [20, 16, 12, 10, 8, 6, 4, 3, 2, 1]
+        epochs = 20
+        z_size = 20
+
+        results = experiment_numE_loop(all_num_experts, dataset, epochs, gatef, expertf, folder)
+        result2 = experiment_gatef_loop({"predesigned": Gate.predesigned}, dataset, epochs, z_size, expertf, folder)
+        plot.special_num_E_accuracy(results["acc"], result2["acc"]["predesigned"], z_size,
+                                    folder + "numE_accuracy_with_additional_predesigned_gate.png")
+
+        for number_of_experts, activation in results["class activation"].items():
+            for i in range(number_of_experts):
+                print("plot activation",i,"/",number_of_experts)
+                plot.plot_activation_of_expert(activation, i,
+                                               folder + " expert %i-%i activation.png" % (i,number_of_experts))
+
+class Experiment5:
+    index = 5
+    name = "Cifar100 EConv different#E"
+
+    @staticmethod
+    def run(folder):
+        dataset = cifar100and20()
+        expertf = Expert.convolutional
+        gatef = Gate.one_hidden_layer
+        all_num_experts = [20, 16, 12, 10, 8, 6, 4, 3, 2, 1]
+        epochs = 20
+        z_size = 20
+
+        results = experiment_numE_loop(all_num_experts, dataset, epochs, gatef, expertf, folder)
+        result2 = experiment_gatef_loop({"predesigned": Gate.predesigned}, dataset, epochs, z_size, expertf, folder)
+        plot.special_num_E_accuracy(results["acc"],result2["acc"]["predesigned"], z_size,
+                                    folder + "numE_accuracy_with_additional_predesigned_gate.png")
+
+        for number_of_experts, activation in results["class activation"].items():
+            for i in range(number_of_experts):
+                print("plot activation",i,"/",number_of_experts)
+                plot.plot_activation_of_expert(activation, i,
+                                               folder + " expert %i-%i activation.png" % (i,number_of_experts))
+
+class Experiment6:
+    index = 6
+    name = "Mixture EConv different#E"
+
+    @staticmethod
+    def run(folder):
+        dataset = mixture_data()
+        expertf = Expert.convolutional
+        gatef = Gate.one_hidden_layer
+        all_num_experts = [20, 16, 12, 10, 8, 6, 4, 3, 2, 1]
+        epochs = 20
+        z_size = 2
+
+        result2 = experiment_gatef_loop({"predesigned": Gate.predesigned}, dataset, epochs, z_size, expertf, folder)
+        results = experiment_numE_loop(all_num_experts, dataset, epochs, gatef, expertf, folder)
+        plot.special_num_E_accuracy(results["acc"],result2["acc"]["predesigned"],z_size,
+                                    folder + "numE_accuracy_with_additional_predesigned_gate.png")
+
+        for number_of_experts, activation in results["class activation"].items():
+            for i in range(number_of_experts):
+                print("plot activation",i,"/",number_of_experts)
+                plot.plot_activation_of_expert(activation, i,
+                                               folder + " expert %i-%i activation.png" % (i,number_of_experts))
+
+class Experiment7:
+    index= 7
+    name = "Mixture EHetero differentG"
+
+    @staticmethod
+    def run(folder):
+        dataset = mixture_data()
+        expertsf = [Expert.linear, Expert.convolutional]
+        gates = {"predesigned": Gate.predesigned,
+                 "linear": Gate.linear,
+                 "1-hidden": Gate.one_hidden_layer}
+        num_experts = len(expertsf)
+        epochs = 20
+
+        result = experiment_gatef_loop(gates, dataset, epochs, num_experts, expertsf, folder)
+
+        for gname, activation in result["class activation"].items():
+            for i in [0, 1]:
+                plot.plot_activation_of_expert(activation, i, folder + gname + " expert %i activation.png" % i)
+
+
+def experiment_gatef_loop(all_gatef, dataset,
+                          epochs, num_experts, expertf,
+                          folder):
+    trainsize, *x_shape = dataset.train_X.shape
+    testsize, num_classes = dataset.test_Y.shape
+
+    hasZ = hasattr(dataset,"train_Z")
+    if hasZ: _, z_size = dataset.train_Z.shape
+    else: z_size = None
+
+    results = {"acc":{}, "confusion":{}, "set activation":{}, "class activation":{}}
+    for name, gatef in all_gatef.items():
+        print("####case",name,"####")
+        with tf.Graph().as_default() as graph:
+            X = tf.placeholder(tf.float32, [None]+x_shape)
+            Y_Onehot = tf.placeholder(tf.float32, (None, num_classes))
+
+            if hasZ: Z_Onehot = tf.placeholder(tf.float32, (None, z_size))
+            else: Z_Onehot = None
+
+            model = Mixture_of_experts(X, Y_Onehot,
+                                       num_experts, num_classes,
+                                       gatef, expertf, Z_Onehot=Z_Onehot)
+
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
+            with tf.Session(config=config) as sess:
+                sess.run(tf.global_variables_initializer())
+
+                traintuple = dataset.traintuple(hasZ)
+                testtuple = dataset.testtuple(hasZ)
+                if hasZ: tensortuple = X, Y_Onehot, Z_Onehot
+                else: tensortuple = X, Y_Onehot
+
+                def trainiterf():
+                    return feed_iter(traintuple, tensortuple,
+                                     trainsize, 128, shuffle=True)
+                def testiterf():
+                    return feed_iter(testtuple, tensortuple,
+                                     testsize, 128, shuffle=False)
+
+                acc, acc_op = tf.metrics.accuracy(model.Y_True,model.Y_Pred)
+                train_acc, test_acc = train(
+                    sess, epochs,
+                    trainiterf, testiterf,
+                    model.Train_op, acc_op, acc)
+
+                results["acc"][name] = {"train":train_acc,"test":test_acc}
+                results["confusion"][name] = compute.confusion_matrices(sess, testiterf(),
+                                                       model.Y_True, model.Y_Pred, model.Largest_gate,
+                                                       num_experts, num_classes)
+
+                save.save_confusion(results["confusion"][name], folder + name + "_confusion.txt")
+
+                if model.Z_True is not None:
+                    results["set activation"][name] = compute.activation_matrix(
+                        sess, testiterf(), model.Z_True,model.Gate,z_size, num_experts)
+                    save.save_activation(results["set activation"][name], folder + name + "_set_activation.txt")
+
+                results["class activation"][name] = compute.activation_matrix(
+                    sess, testiterf(),model.Y_True, model.Gate, num_classes, num_experts)
+                save.save_activation(results["class activation"][name], folder + name + "_class_activation.txt")
+
+    plot.plot_epoch_accuracy(results["acc"], folder+"epoch_accuracy.png")
+    return results
+
+
+def experiment_numE_loop(all_num_experts, dataset, epochs,
+                         gatef, expertf, folder):
+    trainsize, *x_shape = dataset.train_X.shape
+    testsize, num_classes = dataset.test_Y.shape
+
+    hasZ = hasattr(dataset,"train_Z")
+
+    if hasZ: _, z_size = dataset.train_Z.shape
+    else: z_size = None
+
+    results = {"acc": {}, "confusion": {}, "set activation": {}, "class activation":{}}
+    for num_experts in all_num_experts:
+        print("####case", num_experts, "####")
+        with tf.Graph().as_default() as graph:
+            X = tf.placeholder(tf.float32, [None]+x_shape)
+            Y_Onehot = tf.placeholder(tf.float32, (None, num_classes))
+
+            if not hasZ: Z_Onehot = None
+            else: Z_Onehot = tf.placeholder(tf.float32, (None, z_size))
+
+            model = Mixture_of_experts(X, Y_Onehot,
+                                       num_experts, num_classes,
+                                       gatef, expertf, Z_Onehot=Z_Onehot)
+
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
+            with tf.Session(config=config) as sess:
+                sess.run(tf.global_variables_initializer())
+
+                if hasZ:
+                    traintuple = dataset.train_X, dataset.train_Y,dataset.train_Z
+                    testtuple = dataset.test_X, dataset.test_Y, dataset.test_Z
+                    tensortuple = X, Y_Onehot, Z_Onehot
+                else:
+                    traintuple = dataset.train_X, dataset.train_Y
+                    testtuple = dataset.test_X, dataset.test_Y
+                    tensortuple = X, Y_Onehot
+
+                def trainiterf():
+                    return feed_iter(traintuple, tensortuple,
+                                     trainsize, 128, shuffle=True)
+                def testiterf():
+                    return feed_iter(testtuple, tensortuple,
+                                     testsize, 128, shuffle=False)
+
+                acc, acc_op = tf.metrics.accuracy(model.Y_True, model.Y_Pred)
+                train_acc, test_acc = train(sess, epochs, trainiterf, testiterf,
+                                            model.Train_op, acc_op, acc)
+
+                results["acc"][num_experts] = {"train": train_acc, "test": test_acc}
+                results["confusion"][num_experts] = compute.confusion_matrices(
+                    sess, testiterf(),
+                    model.Y_True, model.Y_Pred, model.Largest_gate,
+                    num_experts, num_classes)
+                save.save_confusion(results["confusion"][num_experts],
+                                    folder + "%iexperts_confusion.txt" % num_experts)
+
+                if hasZ:
+                    results["set activation"][num_experts] = compute.activation_matrix(
+                        sess, testiterf(),
+                        model.Z_True, model.Gate,
+                        z_size, num_experts)
+                    save.save_activation(results["set activation"][num_experts],
+                                         folder + "%i_set_activation.txt" % num_experts)
+
+                results["class activation"][num_experts] = compute.activation_matrix(
+                    sess, testiterf(),model.Y_True, model.Gate, num_classes, num_experts)
+                save.save_activation(results["class activation"][num_experts], folder + "%i_class_activation.txt" % num_experts)
+
+
+    plot.plot_numE_accuracy(results["acc"], folder + "numE_accuracy.png")
+    return results
+
+
+
+folder = "result/"
+print("make folder if not exist:", folder)
+force_mkdir(folder)
+experiment_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
+#folder +=str(experiment_timestamp)+"/"
+#force_mkdir(folder)
+
+experiments = Experiment1, Experiment2, Experiment3, Experiment4, Experiment5, Experiment6, Experiment7
+experiments = {e.index : e for e in experiments}
+
+for i in [3,4,7]:
+    experiment = experiments[i]
+    i_folder = folder + experiment.name + "/"
+    print("make folder if not exist:",i_folder)
+    force_mkdir(i_folder)
+    i_folder += str(experiment_timestamp) + "/"
+    print("make folder if not exist:", i_folder)
+    force_mkdir(i_folder)
+
+    print("###############")
+    print("start running experiment",i,":",experiment.name)
+    experiment.run(i_folder)
+    print("finishing experiment", i, ":", experiment.name)
+    print("###############")
+
+print("all executed")
+
+
+"""
+
+folder = "testfolder/"
+# folder = "results/Experiments/"
+force_mkdir(folder)
+experiment_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
+#folder +=str(experiment_timestamp)+"/"
+#force_mkdir(folder)
+
+experiments = Experiment5, Experiment7
+experiments = {e.index : e for e in experiments}
+
+for i in sorted(experiments):
+    experiment = experiments[i]
+    i_folder = folder + experiment.name + "/"
+    force_mkdir(i_folder)
+    i_folder += str(experiment_timestamp) + "/"
+
+    print("###############")
+    print("start running experiment",i,":",experiment.name)
+    experiment.run(i_folder)
+    print("finishing experiment", i, ":", experiment.name)
+    print("###############")
+
+print("all executed")
+exit()
+"""

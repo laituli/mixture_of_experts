@@ -1,7 +1,10 @@
 data/
 
-code/results/
+code/data
+code/result*
+code/model*
 code/__pycache__
 code/.idea
+
 
 

@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
-import cifar
+from datacode import cifar
+
 
 def transform_mnist_x(X):
     X = np.reshape(X,(-1,28,28,1))

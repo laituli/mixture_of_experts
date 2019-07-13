@@ -1,5 +1,5 @@
 import numpy as np
-from dataset import Dataset, onehot
+from datacode.dataset import Dataset, onehot
 
 USE_TENSORFLOW_MNIST = False
 
@@ -8,7 +8,7 @@ if USE_TENSORFLOW_MNIST:
 
     from tensorflow.examples.tutorials.mnist import input_data
 
-    data_directory = "../data"
+    data_directory = "data"
     mnist = input_data.read_data_sets(data_directory)
 
     mnist_train_y, mnist_test_y = map(onehot,(mnist.train.labels, mnist.test.labels))
@@ -84,6 +84,9 @@ else:
         return T
 
     def load_mnist(normalize=True, flatten=False, one_hot_label=True):
+        if not os.path.exists(dataset_dir):
+            os.mkdir(dataset_dir)
+
         if not os.path.exists(save_file):
             init_mnist()
 
@@ -117,7 +120,7 @@ else:
         'test_label':'t10k-labels-idx1-ubyte.gz'
     }
 
-    dataset_dir = "../data/mnist/"
+    dataset_dir = "data/mnist/"
     save_file = dataset_dir + "mnist.pkl"
 
     train_num = 60000

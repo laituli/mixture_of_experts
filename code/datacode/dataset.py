@@ -61,6 +61,21 @@ class Dataset:
         print('test X',self.test_X.shape)
         print('test Y',self.test_Y.shape)
 
+    def traintuple(self, hasZ=None):
+        if hasZ is None:
+            hasZ = hasattr(self,"train_Z")
+        if hasZ:
+            return self.train_X, self.train_Y, self.train_Z
+        return self.train_X, self.train_Y
+
+    def testtuple(self, hasZ=None):
+        if hasZ is None:
+            hasZ = hasattr(self, "train_Z")
+        if hasZ:
+            return self.test_X, self.test_Y, self.test_Z
+        return self.test_X, self.test_Y
+
+
 def combine_datasets(sets,H,W, is_gray):
     train_X = []
     test_X = []
@@ -69,7 +84,6 @@ def combine_datasets(sets,H,W, is_gray):
         train_X.append(train_x)
         test_x = resized_images(set.test_X, H, W, is_gray)
         test_X.append(test_x)
-
 
     train_X = np.concatenate(train_X)
     test_X = np.concatenate(test_X)
@@ -88,8 +102,23 @@ def combine_datasets(sets,H,W, is_gray):
         test_Y_b = np.pad(set.test_Y, [(0, 0), (a, 0)], mode='constant')
         test_Y = np.concatenate([test_Y_a, test_Y_b])
 
-    return Dataset(train_X,train_Y,test_X,test_Y)
 
+    train_z_trues = []
+    test_z_trues = []
+    for i, set in enumerate(sets):
+        train_z_true = np.ones(len(set.train_Y)) * i
+        test_z_true = np.ones(len(set.test_Y)) * i
+        train_z_trues.append(train_z_true)
+        test_z_trues.append(test_z_true)
+    train_z_trues = np.concatenate(train_z_trues)
+    test_z_trues = np.concatenate(test_z_trues)
+    train_Z = onehot(train_z_trues)
+    test_Z = onehot(test_z_trues)
+
+    d = Dataset(train_X,train_Y,test_X,test_Y)
+    d.train_Z = train_Z
+    d.test_Z = test_Z
+    return d
 
 def visualize(image):
     # BHWC
